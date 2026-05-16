@@ -136,8 +136,10 @@
     const usersList = document.getElementById('users-list');
     const toast = document.getElementById('toast');
 
-    function showToast(msg) {
+    function showToast(msg, isSuccess = false) {
         toast.textContent = msg;
+        toast.style.background = isSuccess ? 'var(--primary)' : 'var(--error)';
+        toast.style.color = isSuccess ? '#000' : '#fff';
         toast.style.opacity = '1';
         setTimeout(() => toast.style.opacity = '0', 3000);
     }
@@ -206,12 +208,15 @@
             const data = await res.json();
             
             if (!res.ok) {
-                showToast(data.error);
+                showToast(data.error, false);
                 return;
+            }
+            if (data.message) {
+                showToast(data.message, true);
             }
             fetchState(); // instant refresh
         } catch (e) {
-            showToast('Error');
+            showToast('Error', false);
         }
     };
 
