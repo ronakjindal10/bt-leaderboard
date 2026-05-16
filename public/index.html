@@ -1,0 +1,238 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>BT Leaderboard</title>
+    <style>
+        :root {
+            --bg: #121212;
+            --surface: #1e1e1e;
+            --primary: #bb86fc;
+            --error: #cf6679;
+            --text: #ffffff;
+            --text-sec: #b3b3b3;
+        }
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+            background-color: var(--bg);
+            color: var(--text);
+            margin: 0;
+            padding: 20px;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            min-height: 100vh;
+        }
+        .container {
+            width: 100%;
+            max-width: 400px;
+            display: flex;
+            flex-direction: column;
+            gap: 20px;
+        }
+        h1 {
+            text-align: center;
+            margin: 10px 0;
+            font-size: 24px;
+        }
+        .card {
+            background: var(--surface);
+            padding: 20px;
+            border-radius: 12px;
+            box-shadow: 0 4px 6px rgba(0,0,0,0.3);
+        }
+        input {
+            width: 100%;
+            padding: 12px;
+            border: 1px solid #333;
+            border-radius: 8px;
+            background: #2a2a2a;
+            color: white;
+            font-size: 16px;
+            box-sizing: border-box;
+            margin-bottom: 12px;
+        }
+        button {
+            width: 100%;
+            padding: 12px;
+            background: var(--primary);
+            color: #000;
+            border: none;
+            border-radius: 8px;
+            font-size: 16px;
+            font-weight: bold;
+            cursor: pointer;
+            transition: opacity 0.2s;
+        }
+        button:active { opacity: 0.8; }
+        button:disabled { background: #555; color: #888; cursor: not-allowed; }
+        
+        #leaderboard { display: none; }
+        
+        .user-row {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 12px 0;
+            border-bottom: 1px solid #333;
+        }
+        .user-row:last-child { border-bottom: none; }
+        .user-info { display: flex; align-items: center; gap: 12px; }
+        .rank { font-weight: bold; color: var(--text-sec); width: 20px; }
+        .name { font-size: 18px; }
+        .score { font-size: 20px; font-weight: bold; color: var(--primary); }
+        .bt-btn {
+            width: auto;
+            padding: 8px 16px;
+            font-size: 14px;
+            background: #333;
+            color: white;
+            border: 1px solid #444;
+        }
+        .bt-btn:hover { background: #444; }
+        .toast {
+            position: fixed;
+            bottom: 20px;
+            left: 50%;
+            transform: translateX(-50%);
+            background: var(--error);
+            color: white;
+            padding: 12px 24px;
+            border-radius: 20px;
+            font-size: 14px;
+            opacity: 0;
+            transition: opacity 0.3s;
+            pointer-events: none;
+            z-index: 1000;
+        }
+    </style>
+</head>
+<body>
+
+<div class="container">
+    <h1>📉 BT Leaderboard</h1>
+
+    <div id="join-screen" class="card">
+        <input type="text" id="name-input" placeholder="Your name..." autofocus>
+        <button id="join-btn">Join Sesh</button>
+    </div>
+
+    <div id="leaderboard" class="card">
+        <div id="users-list"></div>
+    </div>
+</div>
+
+<div id="toast" class="toast"></div>
+
+<script>
+    let myUser = JSON.parse(localStorage.getItem('bt_user')) || null;
+    let pollInterval;
+
+    const joinScreen = document.getElementById('join-screen');
+    const leaderboard = document.getElementById('leaderboard');
+    const nameInput = document.getElementById('name-input');
+    const joinBtn = document.getElementById('join-btn');
+    const usersList = document.getElementById('users-list');
+    const toast = document.getElementById('toast');
+
+    function showToast(msg) {
+        toast.textContent = msg;
+        toast.style.opacity = '1';
+        setTimeout(() => toast.style.opacity = '0', 3000);
+    }
+
+    async function fetchState() {
+        try {
+            const res = await fetch('/api/state');
+            const users = await res.json();
+            renderUsers(users);
+        } catch (e) {
+            console.error('Failed to fetch state', e);
+        }
+    }
+
+    function renderUsers(users) {
+        usersList.innerHTML = '';
+        users.forEach((u, i) => {
+            const isMe = myUser && myUser.id === u.id;
+            const row = document.createElement('div');
+            row.className = 'user-row';
+            
+            row.innerHTML = `
+                <div class="user-info">
+                    <span class="rank">#${i + 1}</span>
+                    <span class="name">${u.name} ${isMe ? '(You)' : ''}</span>
+                </div>
+                <div style="display:flex; align-items:center; gap: 12px;">
+                    <span class="score">${u.score}</span>
+                    ${!isMe ? `<button class="bt-btn" onclick="giveBt('${u.id}')">+1 BT</button>` : '<div style="width: 70px"></div>'}
+                </div>
+            `;
+            usersList.appendChild(row);
+        });
+    }
+
+    async function join(name) {
+        if (!name) return;
+        joinBtn.disabled = true;
+        try {
+            const res = await fetch('/api/join', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ name })
+            });
+            if (!res.ok) throw new Error(await res.text());
+            
+            myUser = await res.json();
+            localStorage.setItem('bt_user', JSON.stringify(myUser));
+            
+            showLeaderboard();
+        } catch (e) {
+            showToast('Failed to join');
+        } finally {
+            joinBtn.disabled = false;
+        }
+    }
+
+    window.giveBt = async (toId) => {
+        if (!myUser) return;
+        try {
+            const res = await fetch('/api/bt', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ fromId: myUser.id, toId })
+            });
+            const data = await res.json();
+            
+            if (!res.ok) {
+                showToast(data.error);
+                return;
+            }
+            fetchState(); // instant refresh
+        } catch (e) {
+            showToast('Error');
+        }
+    };
+
+    function showLeaderboard() {
+        joinScreen.style.display = 'none';
+        leaderboard.style.display = 'block';
+        fetchState();
+        if (pollInterval) clearInterval(pollInterval);
+        pollInterval = setInterval(fetchState, 2000); // Poll every 2s
+    }
+
+    joinBtn.addEventListener('click', () => join(nameInput.value));
+    nameInput.addEventListener('keypress', (e) => {
+        if (e.key === 'Enter') join(nameInput.value);
+    });
+
+    // Init
+    if (myUser) {
+        showLeaderboard();
+    }
+</script>
+
+</body>
+</html>
